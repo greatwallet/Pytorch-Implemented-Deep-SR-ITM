@@ -14,11 +14,6 @@ from glob import glob
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 
-transforms.Compose([
-    transforms.ToTensor(),
-])
-
-
 class YouTubeDataset(Dataset):
     """YouTube dataset."""
 
@@ -49,12 +44,12 @@ class YouTubeDataset(Dataset):
             idx = idx.tolist()
 
         SDR_name = osp.join(self.SDR_dir, 
-                            '{:06d}.{}'.format(self.idx + 1, self.file_type))
+                            '{:06d}.{}'.format(idx + 1, self.file_type))
         HDR_name = osp.join(self.HDR_dir, 
-                            '{:06d}.{}'.format(self.idx + 1, self.file_type))
+                            '{:06d}.{}'.format(idx + 1, self.file_type))
         
-        SDR_img = cv2.imread(SDR_name, flag=cv2.IMREAD_UNCHANGED)
-        HDR_img = cv2.imread(HDR_name, flag=cv2.IMREAD_UNCHANGED)
+        SDR_img = cv2.imread(SDR_name, cv2.IMREAD_UNCHANGED)
+        HDR_img = cv2.imread(HDR_name, cv2.IMREAD_UNCHANGED)
         
         # transfer to YUV format from UVY 
         SDR_img = cv2.cvtColor(SDR_img, cv2.COLOR_BGR2RGB)
@@ -64,7 +59,7 @@ class YouTubeDataset(Dataset):
         SDR_img = SDR_img.astype(np.float32)
         HDR_img = HDR_img.astype(np.float32)
         SDR_img = SDR_img / 255.0
-        HDR_img = HDR_img / 65535.0
+        HDR_img = HDR_img / 1023.0
         
         SDR_base = guidedFilter(guide=SDR_img, src=SDR_img, radius=5, eps=0.01)
         
@@ -76,5 +71,4 @@ class YouTubeDataset(Dataset):
         SDR_img = torch.from_numpy(SDR_img)
         HDR_img = torch.from_numpy(HDR_img)
         SDR_base = torch.from_numpy(SDR_base)
-        
         return SDR_img, HDR_img, SDR_base
