@@ -3,6 +3,13 @@ A Pytorch implemented Deep SR-ITM (ICCV2019)
 
 > Soo Ye Kim, Munchurl Kim. A Multi-purpose Convolutional Neural Network for Simultaneous Super-Resolution and High Dynamic Range Image Reconstruction. In Proceedings of Asian Conference on Computer Vision, 2018.
 
+## Schedule
+- [X] Train base-net on single-gpu
+- [ ] Train full-net on single-gpu
+- [ ] Train base-net on multiple-gpu
+- [ ] Train full-net on multiple-gpu
+- [ ] Validate on test set on `PSNR`, `SSIM` and other metrics
+- [ ] Visualization
 
 ## Citation
 If you want to use this code, please cite the following bibtex.
