@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from dataset import YouTubeDataset
-from metrics import PSNR
+from metrics import MS_SSIM, PSNR, SSIM
 from models import SR_ITM_base_net
 
 # Global Parameters
@@ -56,7 +56,7 @@ max_epochs = 200
 use_cuda = True
 
 # gpu id
-gpu_id = 0
+gpu_id = 3
 
 # if load from the checkpoint 
 load = False
@@ -68,7 +68,7 @@ resume = False
 check_epoch = 100
 
 # display interval
-disp_interval = 50
+disp_interval = 100
 
 # indent of json file
 indent = 4
@@ -76,9 +76,15 @@ indent = 4
 # whether validate
 validate = True
 
+# seeds
+torch_seed = 2020
+numpy_seed = 2020
+
 def train_base_net(net, trainloader, testloader, optimizer, criterions, device):
     mse = criterions['mse']
     psnr = criterions['psnr']
+    ssim = criterions['ssim']
+    ms_ssim = criterions['ms_ssim']
     
     train_metric = {
         'mse': [], 
@@ -87,7 +93,9 @@ def train_base_net(net, trainloader, testloader, optimizer, criterions, device):
     
     test_metric = {
         'mse': [], 
-        'psnr': []
+        'psnr': [], 
+        'ssim': [], 
+        'ms_ssim': []
     } if validate else None
     
     for epoch in range(start_epoch, max_epochs + 1):  # loop over the dataset multiple times
@@ -141,6 +149,9 @@ def train_base_net(net, trainloader, testloader, optimizer, criterions, device):
             net.eval()
             running_loss = 0.0
             running_psnr_val = 0.0
+            running_ssim_val = 0.0 
+            running_ms_ssim_val = 0.0
+            
             start = time.time()
             print('>>> Testing...')
 
@@ -156,26 +167,38 @@ def train_base_net(net, trainloader, testloader, optimizer, criterions, device):
                     outputs = net(SDR_img, SDR_base)
                     loss = mse(outputs, HDR_img)
                     psnr_val = psnr(outputs, HDR_img)
+                    ssim_val = ssim(outputs, HDR_img)
+                    ms_ssim_val = ms_ssim(outputs, HDR_img)
 
                     # print statistics
                     running_loss += loss.item()
                     running_psnr_val += psnr_val.item()
+                    running_ssim_val += ssim_val.item()
+                    running_ms_ssim_val += ms_ssim_val.item()
 
                 end = time.time()
                 mean_test_loss = running_loss / len(testloader)
                 mean_test_psnr_val = running_psnr_val / len(testloader)
+                mean_test_ssim_val = running_ssim_val / len(testloader)
+                mean_test_ms_ssim_val = running_ms_ssim_val / len(testloader)
 
                 test_metric['mse'].append(mean_test_loss)
                 test_metric['psnr'].append(mean_test_psnr_val)
-                print('[epoch %d, iter %6d] MSE: %.4f, PSNR: %.4f, lr: %.2e, time cost: %f' %
-                          (epoch, i + 1, mean_test_loss, 
-                           mean_test_psnr_val, lr, end - start))
+                test_metric['ssim'].append(mean_test_ssim_val)
+                test_metric['ms_ssim'].append(mean_test_ms_ssim_val)
+                
+                print('[epoch %d] MSE: %.4e, PSNR: %.4f, SSIM: %.4f, MS_SSIM: %.4f, lr: %.2e, time cost: %f' %
+                          (epoch, mean_test_loss, 
+                           mean_test_psnr_val, 
+                           mean_test_ssim_val, 
+                           mean_test_ms_ssim_val, 
+                           lr, end - start))
 
                 running_loss = 0.0
                 running_psnr_val = 0.0
                 start = time.time()
 
-        save_name = osp.join(checkpoint_dir, 'base_net_{}.pth'
+        save_name = osp.join(checkpoint_dir, 'base_net_{:03d}.pth'
                                  .format(epoch))
         torch.save({
             'epoch': epoch, 
@@ -184,43 +207,55 @@ def train_base_net(net, trainloader, testloader, optimizer, criterions, device):
             'train_loss': mean_train_loss, 
             'train_psnr': mean_train_psnr_val, 
             'test_loss': None if validate is False else mean_test_loss, 
-            'test_psnr': None if validate is False else mean_test_psnr_val
+            'test_psnr': None if validate is False else mean_test_psnr_val, 
+            'test_ssim': None if validate is False else mean_test_ssim_val, 
+            'test_ms_ssim': None if validate is False else mean_test_ms_ssim_val, 
         }, save_name)
         print('save model: {}'.format(save_name))
         
-        return train_metric, test_metric
+    return train_metric, test_metric
            
 if __name__ == '__main__':
+    # set seed
+    torch.manual_seed(torch_seed)
+    np.random.seed(numpy_seed)
+    
     if torch.cuda.is_available() and not use_cuda:
         print("WARNING: You have a CUDA device, so you should probably run with `use_cuda = True`")
     
     # load data
     trainset = YouTubeDataset(osp.join(root_dir, 'trainset_SDR'),
-                              osp.join(root_dir, 'trainset_HDR'))
+                              osp.join(root_dir, 'trainset_HDR'), 
+                              phase='train')
     
     trainloader = DataLoader(trainset, batch_size=batch_size, 
                             shuffle=True, num_workers=num_workers)
     
     testset = YouTubeDataset(osp.join(root_dir, 'testset_SDR'),
-                              osp.join(root_dir, 'testset_HDR'))
+                              osp.join(root_dir, 'testset_HDR'), 
+                              phase='test', scale=scale)
     
     testloader = DataLoader(testset, batch_size=1, 
                             shuffle=False, num_workers=num_workers)
     # load base net
     base_net= SR_ITM_base_net(channels=feature_channels, scale=scale)
     
-    criterions = {}
-    criterions['mse'] = nn.MSELoss(reduction='mean')
-    criterions['psnr'] = PSNR(peakval=1.0)
+    criterions = {
+        'mse': nn.MSELoss(reduction='mean'), 
+        'psnr': PSNR(peakval=1.0), 
+        'ssim': SSIM(data_range=1.0), 
+        'ms_ssim': MS_SSIM(data_range=1.0)
+    }
     
     optimizer = optim.Adam(base_net.parameters(), lr=lr, 
                            weight_decay=weight_decay)
     
+    device = torch.device("cuda:%d" % gpu_id if use_cuda else "cpu")
+    torch.cuda.set_device(device)
+    
     if use_cuda is True:
         base_net.cuda()
-    
-    device = torch.device("cuda:%d" % gpu_id if use_cuda else "cpu")
-        
+         
     if load is True or resume is True:
         load_name = osp.join(checkpoint_dir, 
                             'base_net_{}.pth'.format(check_epoch))
@@ -247,7 +282,7 @@ if __name__ == '__main__':
     day = now.strftime("%d")
     time = now.strftime("%H_%M_%S")
     
-    res_name = osp.join(checkpoint_dir, 'base_net_{}_{}_{}_{},json'.format(year, month, day, time))
+    res_name = osp.join(checkpoint_dir, 'base_net_{}_{}_{}_{}.json'.format(year, month, day, time))
     hyperparameters = {
         'batch_size': batch_size, 
         'num_workers': num_workers, 
@@ -274,6 +309,8 @@ if __name__ == '__main__':
         'check_epoch': check_epoch, 
         'display_interval': disp_interval, 
         'validate': validate, 
+        'numpy_seed': numpy_seed, 
+        'torch_seed': torch_seed, 
         'hyperparameters': hyperparameters, 
         'metrics': metrics
     }

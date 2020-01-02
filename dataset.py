@@ -17,24 +17,39 @@ from torchvision import transforms, utils
 class YouTubeDataset(Dataset):
     """YouTube dataset."""
 
-    def __init__(self, SDR_dir, HDR_dir, file_type='png'):
+    def __init__(self, SDR_dir, HDR_dir, phase="train", scale=None, file_type='png'):
         """
         Args:
             SDR_dir (string): Directory with all the SDR images.
             HDR_dir (string): Directory with all the HDR images.
+            phase (string): "train", "val" or "test". default: train
+            scale (int): the scale between input and ground truth, must > 1
+                        must specified for validation set and test set.
             file_type (string): File type of images. Default: png
         """
         self.SDR_dir = SDR_dir
         self.HDR_dir = HDR_dir
+        self.phase = phase
         self.file_type = file_type
+        self.scale = scale 
+        
+        if phase != "train" and phase != "val" and phase != "test":
+            raise ValueError("Expecting `phase` to be {}, {} or {} but got {}"
+                            .format("train", "val", "test", phase))
+            
+        if phase != "train" and scale is None:
+            raise ValueError("scale must be specified if `phase` == {}"
+                            .format(phase))
         
         N_SDR = len(glob(osp.join(self.SDR_dir,
                                   '*.{}'.format(self.file_type))))
         N_HDR = len(glob(osp.join(self.HDR_dir,
                                   '*.{}'.format(self.file_type))))
-        assert(N_SDR == N_HDR)
+        if N_SDR != N_HDR:
+            raise ValueError("SDR image amount ({}) and HDR image amount({}) are not identical"
+                            .format(N_SDR, N_HDR))
+            
         self.len = N_SDR
-        
 
     def __len__(self):
         return self.len
@@ -54,6 +69,9 @@ class YouTubeDataset(Dataset):
         # transfer to YUV format from UVY 
         SDR_img = cv2.cvtColor(SDR_img, cv2.COLOR_BGR2RGB)
         HDR_img = cv2.cvtColor(HDR_img, cv2.COLOR_BGR2RGB)
+                
+        if self.phase != "train":
+            SDR_img = cv2.resize(SDR_img, (0,0), fx=1.0/self.scale, fy=1.0/self.scale)
         
         # normalize to [0, 1]
         SDR_img = SDR_img.astype(np.float32)
