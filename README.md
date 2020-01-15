@@ -53,6 +53,7 @@ cd Pytorch-Implemented-Deep-SR-ITM
 
 # create conda environment
 conda create --n env-sr-itm python=3.7 -y
+conda activate env-sr-itm
 conda install -c pytorch pytorch -y
 conda install -c pytorch torchvision -y
 conda install -c conda-forge opencv -y
