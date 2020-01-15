@@ -17,14 +17,20 @@ from torchvision import transforms
 
 from dataset import YouTubeDataset
 from metrics import MS_SSIM, PSNR, SSIM
-from models import SR_ITM_base_net
+from models import SR_ITM_full_net
 
 # Global Parameters
 # root directory to data
 root_dir = 'data'
 
+# pretrained model directory
+pretrained_model_dir = osp.join('checkpoints', 'base_net')
+
+# pretrained epoch of pretrained model
+pretrained_epoch = 200
+
 # checkpoint directory
-checkpoint_dir = osp.join('checkpoints', 'base_net')
+checkpoint_dir = osp.join('checkpoints', 'full_net')
 if not osp.exists(checkpoint_dir):
     os.makedirs(checkpoint_dir)
     
@@ -41,7 +47,7 @@ feature_channels = 64
 scale = 2
 
 # learning rate
-lr = 5e-7
+lr = 1e-7
 
 # weight decay
 weight_decay = 5e-4
@@ -50,13 +56,13 @@ weight_decay = 5e-4
 start_epoch = 1
 
 # max epochs
-max_epochs = 200
+max_epochs = 270
 
 # whether to use cuda
 use_cuda = True
 
 # gpu id
-gpu_id = 3
+gpu_id = 1
 
 # if load from the checkpoint 
 load = False
@@ -80,7 +86,11 @@ validate = True
 torch_seed = 2020
 numpy_seed = 2020
 
-def train_base_net(net, trainloader, testloader, optimizer, criterions, device):
+# scheduler option
+milestones = [250, 260]
+gamma = 0.1
+
+def train_full_net(net, trainloader, testloader, optimizer, scheduler, criterions, device):
     mse = criterions['mse']
     psnr = criterions['psnr']
     ssim = criterions['ssim']
@@ -198,7 +208,7 @@ def train_base_net(net, trainloader, testloader, optimizer, criterions, device):
                 running_psnr_val = 0.0
                 start = time.time()
 
-        save_name = osp.join(checkpoint_dir, 'base_net_{:03d}.pth'
+        save_name = osp.join(checkpoint_dir, 'full_net_{:03d}.pth'
                                  .format(epoch))
         torch.save({
             'epoch': epoch, 
@@ -213,12 +223,18 @@ def train_base_net(net, trainloader, testloader, optimizer, criterions, device):
         }, save_name)
         print('save model: {}'.format(save_name))
         
+        # step forward scheduler
+        scheduler.step()
+        
     return train_metric, test_metric
            
 if __name__ == '__main__':
     # set seed
     torch.manual_seed(torch_seed)
     np.random.seed(numpy_seed)
+        
+    device = torch.device("cuda:%d" % gpu_id if use_cuda else "cpu")
+    torch.cuda.set_device(device)
     
     if torch.cuda.is_available() and not use_cuda:
         print("WARNING: You have a CUDA device, so you should probably run with `use_cuda = True`")
@@ -237,8 +253,13 @@ if __name__ == '__main__':
     
     testloader = DataLoader(testset, batch_size=1, 
                             shuffle=False, num_workers=num_workers)
-    # load base net
-    base_net= SR_ITM_base_net(channels=feature_channels, scale=scale)
+    # load full net
+    full_net= SR_ITM_full_net(channels=feature_channels, scale=scale)
+    load_name = osp.join(pretrained_model_dir, 
+                         'base_net_{:03d}.pth'.format(pretrained_epoch))
+    print('loading checkpoint: {}'.format(load_name))
+    checkpoint = torch.load(load_name, map_location=torch.device('cpu'))
+    full_net.load_state_dict(checkpoint['model'], strict=False) 
     
     criterions = {
         'mse': nn.MSELoss(reduction='mean'), 
@@ -247,21 +268,26 @@ if __name__ == '__main__':
         'ms_ssim': MS_SSIM(data_range=1.0)
     }
     
-    optimizer = optim.Adam(base_net.parameters(), lr=lr, 
-                           weight_decay=weight_decay)
-    
-    device = torch.device("cuda:%d" % gpu_id if use_cuda else "cpu")
-    torch.cuda.set_device(device)
+    optimizer = optim.Adam(
+        full_net.parameters(), 
+        lr=lr, 
+        weight_decay=weight_decay
+    )
+    scheduler = optim.lr_scheduler.MultiStepLR(
+        optimizer=optimizer, 
+        milestones=milestones, 
+        gamma=gamma
+    )
     
     if use_cuda is True:
-        base_net.cuda()
+        full_net.cuda()
          
     if load is True or resume is True:
         load_name = osp.join(checkpoint_dir, 
-                            'base_net_{:03d}.pth'.format(check_epoch))
+                            'full_net_{:03d}.pth'.format(check_epoch))
         print('loading checkpoint: {}'.format(load_name))
         checkpoint = torch.load(load_name)
-        base_net.load_state_dict(checkpoint['model'])
+        full_net.load_state_dict(checkpoint['model'])
         
         if load is False and resume is True:
             start_epoch = checkpoint['epoch']
@@ -269,12 +295,16 @@ if __name__ == '__main__':
             lr = optimizer.param_groups[0]['lr']
             weight_decay = optimizer.param_groups[0]['weight_decay']
             
-    train_metric, test_metric = train_base_net(net=base_net, 
-                                               trainloader = trainloader, 
-                                               testloader=testloader, 
-                                               optimizer=optimizer, 
-                                               criterions=criterions, 
-                                               device=device)
+    train_metric, test_metric = train_full_net(
+        net=full_net, 
+        trainloader = trainloader, 
+        testloader=testloader, 
+        optimizer=optimizer, 
+        scheduler = scheduler, 
+        criterions=criterions, 
+        device=device
+    )
+    
     # save result
     now = datetime.now() # current date and time
     year = now.strftime("%Y")
@@ -282,7 +312,7 @@ if __name__ == '__main__':
     day = now.strftime("%d")
     time = now.strftime("%H_%M_%S")
     
-    res_name = osp.join(checkpoint_dir, 'base_net_{}_{}_{}_{}.json'.format(year, month, day, time))
+    res_name = osp.join(checkpoint_dir, 'full_net_{}_{}_{}_{}.json'.format(year, month, day, time))
     hyperparameters = {
         'batch_size': batch_size, 
         'num_workers': num_workers, 
@@ -302,6 +332,8 @@ if __name__ == '__main__':
         'date': '{}_{}_{}_{}'.format(year, month, day, time), 
         'data_dir': root_dir,
         'checkpoint_dir': checkpoint_dir, 
+        'pretrained_model_dir': pretrained_model_dir, 
+        'pretrained_epoch': pretrained_epoch, 
         'use_cuda': use_cuda, 
         'device': str(device), 
         'load_checkpoint': load, 
