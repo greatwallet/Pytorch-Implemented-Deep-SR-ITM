@@ -71,6 +71,8 @@ python train_base_net.py
 python train_full_net.py
 ```
 ### Test
+Download pretrained checkpoints from [here](https://drive.google.com/drive/folders/1FaBiSypCLFZd4Wq1WR2mB2F6cq-H7ad6?usp=sharing).
+
 Please specify the path of the testset and other settings in the [`test.py`](https://github.com/greatwallet/Pytorch-Implemented-Deep-SR-ITM/blob/master/test.py#L24).
 ```
 python test.py
