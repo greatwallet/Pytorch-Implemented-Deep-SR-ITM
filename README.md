@@ -1,7 +1,7 @@
 # Pytorch Implemented Deep-SR-ITM
 A Pytorch implemented Deep SR-ITM (ICCV2019 oral)
 
-> Soo Ye Kim, Munchurl Kim. A Multi-purpose Convolutional Neural Network for Simultaneous Super-Resolution and High Dynamic Range Image Reconstruction. In Proceedings of Asian Conference on Computer Vision, 2018.
+> Soo Ye Kim, Jihyong Oh, Munchurl Kim. Deep SR-ITM: Joint Learning of Super-Resolution and Inverse Tone-Mapping for 4K UHD HDR Applications. IEEE International Conference on Computer Vision, 2019.
 
 <b>Note: </b> The code is completely adapted from [`https://github.com/sooyekim/Deep-SR-ITM`](https://github.com/sooyekim/Deep-SR-ITM) but rewritten in pytorch format. This repository is NOT aimed to improve the baseline, but to retain the original settings in a different implementation. If you have any questions for the details of the implementations, please refer to the original repo. 
 
